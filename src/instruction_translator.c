@@ -5,8 +5,8 @@
 
 // TODO: do a check to see if the descriptor actually exists
 
-void instruction_translator_add(instruction_translator* translator,
-                                const char* key, uint32_t key_length, instruction_descriptor descriptor, uint32_t index = 0) {
+void instruction_translator_add(InstructionTranslator* translator,
+                                const char* key, uint32_t key_length, InstructionDescriptor descriptor, uint32_t index) {
 
     if (key_length == 0) {
         return;
@@ -15,6 +15,13 @@ void instruction_translator_add(instruction_translator* translator,
     if (key_length == index) {
         translator->descriptor = descriptor;
         return;
+    }
+
+    if (translator->next_level_size == 0) {
+        translator->next_level_size = 1;
+        translator->next_level = (InstructionTranslator*)malloc(sizeof(InstructionTranslator));
+        translator->next_level[0].key_letter = key[index];
+        return instruction_translator_add(&translator->next_level[0], key, key_length, descriptor, index + 1);
     }
 
     // search for the letter to see if it exists
@@ -26,7 +33,19 @@ void instruction_translator_add(instruction_translator* translator,
 
         // at this point if bounds are the same then there is no way for this key to work
         if (bound_lower == bound_upper) {
-            break;
+            // there are multiple elements and there needs to be a reallocation and sorting
+            translator->next_level_size++;
+            // TODO: address Clion's concern about buffer leak after failed realloc
+            translator->next_level = (InstructionTranslator*)realloc(translator->next_level, sizeof(InstructionTranslator) * translator->next_level_size);
+            translator->next_level[translator->next_level_size - 1].key_letter = key[index];
+
+            // now move all elements after the current position
+            for (uint32_t n = translator->next_level_size - 1; n > current; n--) {
+                translator->next_level[n] = translator->next_level[n - 1];
+            }
+
+            // and finally populate the given element
+            return instruction_translator_add(&translator->next_level[current], key, key_length, descriptor, index + 1);
         }
 
         // if the letter in array is larger than the searched one reduce the current index
@@ -37,29 +56,18 @@ void instruction_translator_add(instruction_translator* translator,
         // do the reverse otherwise
         else {
             bound_lower = current + 1;
+            if (bound_lower > bound_upper) {
+                bound_lower = bound_upper;
+            }
             current = (bound_lower + bound_upper) / 2;
         }
     }
 
-    // if the code reaches this point there is a need to add the element to the array
-    if (translator->next_level_size == 0) {
-        translator->next_level_size = 1;
-        translator->next_level = (instruction_translator*)malloc(sizeof(instruction_translator));
-        translator->next_level[0].key_letter = key[index];
-        return instruction_translator_add(&translator->next_level[0], key, key_length, descriptor, index + 1);
-    }
-    // if there are multiple elements there needs to be a reallocation and sorting
-    else {
-        translator->next_level_size++;
-        // TODO: address Clion's concern about buffer leak after failed realloc
-        translator->next_level = (instruction_translator*)realloc(translator->next_level, sizeof(instruction_translator) * translator->next_level_size);
-        translator->next_level[translator->next_level_size - 1].key_letter = key[index];
-        // TODO: !! add sorting here (will not work without it) !!
-    }
+    // all cases should be covered
 }
 
-const instruction_descriptor* instruction_translator_get(instruction_translator* translator,
-                                const char* key, uint32_t key_length, uint32_t index = 0) {
+const InstructionDescriptor* instruction_translator_get(InstructionTranslator* translator,
+                                const char* key, uint32_t key_length, uint32_t index) {
 
     // to avoid the situation where the translator structure is empty or key is empty
     if (index == 0 and (translator->next_level_size == 0 or key_length == 0)) {
@@ -68,6 +76,10 @@ const instruction_descriptor* instruction_translator_get(instruction_translator*
 
     // if the last index was reached return the descriptor at given level
     if (index == key_length) {
+        // if key is NULL character then this is not a valid path, return error value
+        if (translator->key_letter == 0) {
+            return nullptr;
+        }
         return &translator->descriptor;
     }
 
@@ -91,6 +103,9 @@ const instruction_descriptor* instruction_translator_get(instruction_translator*
         // do the reverse otherwise
         else {
             bound_lower = current + 1;
+            if (bound_lower > bound_upper) {
+                bound_lower = bound_upper;
+            }
             current = (bound_lower + bound_upper) / 2;
         }
     }
@@ -98,7 +113,7 @@ const instruction_descriptor* instruction_translator_get(instruction_translator*
     return nullptr;
 }
 
-void instruction_translator_clear (const instruction_translator* translator) {
+void instruction_translator_clear (const InstructionTranslator* translator) {
     for (uint32_t n = 0; n < translator->next_level_size; n++) {
         instruction_translator_clear(&translator->next_level[n]);
     }

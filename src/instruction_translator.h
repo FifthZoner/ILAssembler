@@ -3,11 +3,18 @@
 
 #include "instruction_descriptor.h"
 
-typedef struct instruction_translator {
-    struct instruction_translator* next_level = nullptr;
-    instruction_descriptor descriptor;
-    uint32_t next_level_size = 0;
-    uint32_t key_letter = 0;
-}instruction_translator;
+typedef struct InstructionTranslator {
+    struct InstructionTranslator* next_level;
+    InstructionDescriptor descriptor;
+    uint32_t next_level_size;
+    uint32_t key_letter;
+} InstructionTranslator;
+
+
+void instruction_translator_add(InstructionTranslator* translator, const char* key, uint32_t key_length, InstructionDescriptor descriptor, uint32_t index);
+
+const InstructionDescriptor* instruction_translator_get(InstructionTranslator* translator, const char* key, uint32_t key_length, uint32_t index);
+
+void instruction_translator_clear (const InstructionTranslator* translator);
 
 #endif //INSTRUCTION_TRANSLATOR_H

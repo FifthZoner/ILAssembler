@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include "assembler_runner.h"
 #include "parse_arguments.h"
 #include "lexer.h"
 
@@ -15,7 +16,7 @@ int main(int argc, const char** argv) {
         return 1;
     }
 
-    // stuff heregit
+    run_assembling(&lexer_output, &arguments);
 
     printf("Assembling complete!\n");
     return 0;

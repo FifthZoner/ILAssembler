@@ -3,10 +3,11 @@
 
 #include <stdint.h>
 
-typedef struct instruction_descriptor {
-    // TODO: change to actual values in IL
-    uint32_t opcode = 0;
+typedef struct InstructionDescriptor {
 
-}instruction_descriptor;
+    // TODO: add something here
+    uint64_t placeholder;
+
+} InstructionDescriptor;
 
 #endif //INSTRUCTION_DESCRIPTOR_H
