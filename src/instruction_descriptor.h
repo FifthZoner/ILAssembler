@@ -1,12 +1,13 @@
 #ifndef INSTRUCTION_DESCRIPTOR_H
 #define INSTRUCTION_DESCRIPTOR_H
 
-#include <stdint.h>
+#include "lexer.h"
+#include "instruction_container.h"
 
 typedef struct InstructionDescriptor {
 
-    // TODO: add something here
-    uint64_t placeholder;
+    // these functions will take lexer lines and convert them into correct instructions
+    InstructionContainer(called_function*)(LexerLine line) = nullptr;
 
 } InstructionDescriptor;
 

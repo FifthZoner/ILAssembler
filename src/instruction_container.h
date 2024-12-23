@@ -7,7 +7,7 @@ typedef enum {
     none, a, b, c, d
 } instruction_data_configuration;
 
-typedef struct instruction_container {
+typedef struct InstructionContainer {
 
     union {
         struct  {
@@ -33,12 +33,14 @@ typedef struct instruction_container {
             uint64_t r  : 20;
         } type_d;
         struct {
-            uint64_t first_4 : 32 = 0;
-            uint64_t last_1  : 8  = 0;
-            uint64_t configuration_type:24 = (instruction_data_configuration)none;
+            // the first 40 bits serve as a spacer to preserve the encoded 40 bit instruction
+            // variables after that encode metadata in space that would be wasted anyway
+            uint64_t encoded_instruction: 40 = 0;
+            uint64_t configuration_type : 3  = (instruction_data_configuration)none;
+            uint64_t is_valid           : 1  = false;
         } meta;
     };
 
-} instruction_container;
+} InstructionContainer;
 
 #endif //INSTRUCTION_CONTAINER_H

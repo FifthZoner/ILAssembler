@@ -3,7 +3,7 @@
 #include <iso646.h>
 #include <stdlib.h>
 
-// TODO: do a check to see if the descriptor actually exists
+// this might be used for jump label resolution too
 
 void instruction_translator_add(InstructionTranslator* translator,
                                 const char* key, uint32_t key_length, InstructionDescriptor descriptor, uint32_t index) {
@@ -21,6 +21,8 @@ void instruction_translator_add(InstructionTranslator* translator,
         translator->next_level_size = 1;
         translator->next_level = (InstructionTranslator*)malloc(sizeof(InstructionTranslator));
         translator->next_level[0].key_letter = key[index];
+        translator->next_level[0].next_level_size = 0;
+        translator->next_level[0].next_level = nullptr;
         return instruction_translator_add(&translator->next_level[0], key, key_length, descriptor, index + 1);
     }
 
@@ -33,19 +35,40 @@ void instruction_translator_add(InstructionTranslator* translator,
 
         // at this point if bounds are the same then there is no way for this key to work
         if (bound_lower == bound_upper) {
-            // there are multiple elements and there needs to be a reallocation and sorting
             translator->next_level_size++;
-            // TODO: address Clion's concern about buffer leak after failed realloc
-            translator->next_level = (InstructionTranslator*)realloc(translator->next_level, sizeof(InstructionTranslator) * translator->next_level_size);
-            translator->next_level[translator->next_level_size - 1].key_letter = key[index];
+            InstructionTranslator* new_next_level = (InstructionTranslator*)malloc(sizeof(InstructionTranslator) * translator->next_level_size);
+            if (translator->next_level[current].key_letter > key[index]) {
+                // in that case the new entry needs to be put at the current index
+                for (uint32_t n = 0; n < current; n++) {
+                    new_next_level[n] = translator->next_level[n];
+                }
+                new_next_level[current].key_letter = key[index];
+                new_next_level[current].next_level_size = 0;
+                new_next_level[current].next_level = nullptr;
+                for (uint32_t n = current; n < translator->next_level_size - 1; n++) {
+                    new_next_level[n + 1] = translator->next_level[n];
+                }
 
-            // now move all elements after the current position
-            for (uint32_t n = translator->next_level_size - 1; n > current; n--) {
-                translator->next_level[n] = translator->next_level[n - 1];
+                free(translator->next_level);
+                translator->next_level = new_next_level;
+                return instruction_translator_add(&translator->next_level[current], key, key_length, descriptor, index + 1);
             }
+            else {
+                // in that case the new entry needs to be put after the current index
+                for (uint32_t n = 0; n <= current; n++) {
+                    new_next_level[n] = translator->next_level[n];
+                }
+                new_next_level[current + 1].key_letter = key[index];
+                new_next_level[current + 1].next_level_size = 0;
+                new_next_level[current + 1].next_level = nullptr;
+                for (uint32_t n = current + 1; n < translator->next_level_size - 1; n++) {
+                    new_next_level[n + 1] = translator->next_level[n];
+                }
 
-            // and finally populate the given element
-            return instruction_translator_add(&translator->next_level[current], key, key_length, descriptor, index + 1);
+                free(translator->next_level);
+                translator->next_level = new_next_level;
+                return instruction_translator_add(&translator->next_level[current + 1], key, key_length, descriptor, index + 1);
+            }
         }
 
         // if the letter in array is larger than the searched one reduce the current index
