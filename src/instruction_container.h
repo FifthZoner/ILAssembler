@@ -9,6 +9,14 @@ typedef enum {
 
 typedef struct InstructionContainer {
 
+    // OP - operand
+    // t  - 4  bit type
+    // d  - 1  bit destination
+    // s  - 32 bit literal
+    // b  - 5  bit address within a data memory word
+    // r  - 20 bit address
+    // x  - ???
+
     union {
         struct  {
             uint64_t op : 3 ;
@@ -35,9 +43,9 @@ typedef struct InstructionContainer {
         struct {
             // the first 40 bits serve as a spacer to preserve the encoded 40 bit instruction
             // variables after that encode metadata in space that would be wasted anyway
-            uint64_t encoded_instruction: 40 = 0;
-            uint64_t configuration_type : 3  = (instruction_data_configuration)none;
-            uint64_t is_valid           : 1  = false;
+            uint64_t encoded_instruction: 40;
+            uint64_t configuration_type : 3 ;
+            uint64_t is_valid           : 1 ;
         } meta;
     };
 

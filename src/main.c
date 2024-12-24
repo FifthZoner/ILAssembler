@@ -15,10 +15,6 @@ int main(int argc, const char** argv) {
 
     // TODO: allow for multiple source files here
     LexerFiles files;
-    files.files = (char**)malloc(sizeof(char*));
-    files.capacity = 1;
-    files.file_amount = 1;
-    files.files[0] = (char*)arguments.source_file;
 
     const LexerOutput lexer_output = run_lexer(&arguments, &files);
     if (lexer_output.lines_amount == 0) {
@@ -28,6 +24,8 @@ int main(int argc, const char** argv) {
     run_assembling(&lexer_output, &arguments);
 
     free(files.files);
+
+    // TODO: add lexer output freeing here
 
     printf("Assembling complete!\n");
     return 0;

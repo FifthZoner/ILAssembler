@@ -13,4 +13,6 @@ add_executable(ILAssembler src/main.c
         src/instruction_descriptor.h
         src/instruction_container.h
         src/assembler_runner.c
-        src/assembler_runner.h)
+        src/assembler_runner.h
+        src/instruction_handlers.c
+        src/instruction_handlers.h)
