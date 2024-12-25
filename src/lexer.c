@@ -1,20 +1,107 @@
 #include "lexer.h"
 
+#include <ctype.h>
 #include <iso646.h>
 #include <stdio.h>
 
 #include <stdlib.h>
 #include <string.h>
 
+// loosely based on
+// https://cache.industry.siemens.com/dl/files/748/109476748/att_845621/v1/IEC_61131_compliance_en_US.pdf
+// as the proposed language seems to have different functionality
+
+// Update the defines after modifying values below!
 #define LINE_BUFFER 512
 
-#define WHITE_SPACE_CHARACTERS_AMOUNT 2
-const char white_space_characters[WHITE_SPACE_CHARACTERS_AMOUNT] = { ' ', '\t' };
-const char comment_character = ';';
+#define WHITE_SPACE_CHARACTERS_AMOUNT 3
+constexpr char white_space_characters[WHITE_SPACE_CHARACTERS_AMOUNT] = { ' ', '\t', '\n' };
 
-bool prepare_token(char* token, uint32_t length, LexerToken* location) {
+#define SPLITTING_CHARACTERS_AMOUNT 3
+constexpr char splitting_characters[SPLITTING_CHARACTERS_AMOUNT] = { ',', ';', '#' };
+
+// IL seems to only support one line comments
+#define COMMENT_STRING_LENGTH 2
+const char* comment_string = "//";
+
+bool detect_token_types(LexerLine* line) {
+    // first let's do initial preprocessing like length calculation and letter case change
+    for (uint32_t current_token_index = 0; current_token_index < line->token_amount; current_token_index++) {
+        LexerToken* current_token = line->tokens + current_token_index;
+        current_token->length = strnlen(current_token->token.text, LINE_BUFFER);
+
+        // TODO: determine whether or not co convert all tokens into uppercase like in FD, for now all will be uppercase
+        // lower case a, b, c ???
+        for (uint32_t n = 0; n < current_token->length; n++) {
+            current_token->token.text[n] = (char)toupper(current_token->token.text[n]);
+        }
+
+
+        // checking for invalid negative
+        current_token->data.valid_numeric = true;
+        for (uint32_t n = 0; n < current_token->length; n++) {
+            if (current_token->token.text[n] == '-' and n != 0) {
+                current_token->data.valid_numeric = false;
+                current_token->data.valid_binary = false;
+                current_token->data.valid_octal = false;
+                current_token->data.valid_hex = false;
+                current_token->data.valid_decimal = false;
+                current_token->data.valid_boolean = false;
+                current_token->data.valid_real = false;
+                break;
+            }
+        }
+        if (not current_token->data.valid_numeric) {
+            continue;
+        }
+
+        // initial
+        current_token->data.valid_binary = true;
+        current_token->data.valid_octal = true;
+        current_token->data.valid_hex = true;
+        current_token->data.valid_decimal = true;
+        current_token->data.valid_boolean = true;
+        current_token->data.valid_real = true;
+
+        // checking for decimals
+        for (uint32_t n = 0; n < current_token->length; n++) {
+            if ((current_token->token.text[n] < '0' or current_token->token.text[n] > '9') and current_token->token.text[n] != '-') {
+                current_token->data.valid_decimal = false;
+                break;
+            }
+        }
+
+
+    }
+
+    // now context aware token analysis and size reduction can start
+    for (uint32_t current_token_index = 0; current_token_index < line->token_amount; current_token_index++) {
+        LexerToken* current_token = line->tokens + current_token_index;
+
+        // checking for base 2/8/16 as it's impossible without context
+    }
 
     return true;
+}
+
+void add_token(char* address, uint32_t length, LexerLine* line) {
+    // if there was something there isolate it
+    if (line->capacity == line->token_amount) {
+        line->capacity *= 2;
+        LexerToken* temp = (LexerToken*)malloc(sizeof(LexerToken) * line->capacity);
+        memcpy(temp, line->tokens, sizeof(LexerToken) * line->token_amount);
+        // TODO: figure out why this causes a segfault
+        //free(line->tokens);
+        line->tokens = temp;
+    }
+
+    line->tokens[line->token_amount].length = length;
+    char* temp = (char*)malloc((length + 1) * sizeof(char));
+    strncpy(temp, address, length);
+    temp[length] = '\0';
+    line->tokens[line->token_amount++].token.text = temp;
+
+    printf("%s\n", temp);
 }
 
 LexerLine split_line(char* line) {
@@ -31,41 +118,47 @@ LexerLine split_line(char* line) {
     // now that it's ready for data let's analyse the line
     // FEATURE: different encoding support like UTF-8 could be added here
     for (uint32_t current_index = 0, start = 0; current_index < line_length; current_index++) {
-        bool is_white_space = false;
+        bool is_whitespace = false;
         for (uint32_t n = 0; n < WHITE_SPACE_CHARACTERS_AMOUNT; n++) {
             if (line[current_index] == white_space_characters[n]) {
-                is_white_space = true;
+                is_whitespace = true;
                 break;
             }
         }
+
         // if there was only a white space continue
-        if (is_white_space and start == current_index) {
+        if (is_whitespace and start == current_index) {
             start++;
             continue;
         }
 
-        if (not is_white_space and current_index != line_length - 1) {
+        bool found_splitting = false;
+        // if it's a splitting character we also need to add it's token to the line
+        for (uint32_t n = 0; n < SPLITTING_CHARACTERS_AMOUNT; n++) {
+            if (line[current_index] == splitting_characters[n]) {
+                found_splitting = true;
+                break;
+            }
+        }
+
+        if (found_splitting) {
+            add_token(line + start, current_index - start, &output);
+            add_token(line + current_index, 1, &output);
+            start = current_index + 1;
             continue;
         }
 
-        // if there was something there isolate it
-        if (output.capacity == output.token_amount) {
-            output.capacity *= 2;
-            output.tokens = (LexerToken*)realloc(output.tokens, sizeof(LexerToken) * output.capacity);
+        if (not is_whitespace and current_index != line_length - 1) {
+            continue;
         }
 
-        if (not prepare_token(line + start, current_index - start, output.tokens + output.token_amount)) {
-            printf("Error: Lexer could not handle token, aborting!\n");
-            free(output.tokens);
-            output.token_amount = 0;
-            output.capacity = 0;
-            return output;
+        if (is_whitespace) {
+            add_token(line + start, current_index - start, &output);
         }
-        //output.tokens[output.token_amount].length = current_index - start;
-        //char* temp = (char*)malloc((output.tokens[output.token_amount].length + 1) * sizeof(char));
-        //strncpy(temp, line + start, output.tokens[output.token_amount].length);
-        //temp[output.tokens[output.token_amount].length] = '\0';
-        //output.tokens[output.token_amount++].token.text = temp;
+        else {
+            add_token(line + start, current_index - start + 1, &output);
+        }
+
         start = current_index + 1;
     }
 
@@ -75,10 +168,10 @@ LexerLine split_line(char* line) {
 bool lex_file(const CommandArguments* arguments, FILE* file, LexerOutput* output, LexerFiles* files) {
     // might want to put that to the function below
     const auto line = (char*)malloc(LINE_BUFFER * sizeof(char));
-    while (not feof(file)) {
-        fgets(line, LINE_BUFFER, file);
+    while (fgets(line, LINE_BUFFER, file)) {
 
-        if (line[0] == comment_character) {
+        // check if it's a comment
+        if (strncmp(line, comment_string, COMMENT_STRING_LENGTH) == 0 or line[0] == '\n') {
             continue;
         }
 
