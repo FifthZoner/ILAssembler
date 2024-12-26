@@ -19,10 +19,12 @@ typedef struct LexerToken {
     union {
         char* text;
         char* instruction;
+        uint64_t label_line;
         int64_t integer;
         long double real;
-        uint64_t unsigned_integer;
-        uint64_t hex_mask;
+        uint64_t hex;
+        uint64_t oct;
+        uint64_t bin;
     } token;
     uint32_t length;
     struct {

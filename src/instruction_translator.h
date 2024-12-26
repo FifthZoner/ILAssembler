@@ -3,8 +3,8 @@
 
 #include "instruction_descriptor.h"
 
-typedef struct InstructionTranslator {
-    struct InstructionTranslator* next_level;
+typedef struct Translator {
+    struct Translator* next_level;
     InstructionDescriptor descriptor;
     uint32_t next_level_size;
     uint32_t key_letter;

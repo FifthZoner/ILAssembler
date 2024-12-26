@@ -17,12 +17,14 @@
 #define WHITE_SPACE_CHARACTERS_AMOUNT 3
 constexpr char white_space_characters[WHITE_SPACE_CHARACTERS_AMOUNT] = { ' ', '\t', '\n' };
 
-#define SPLITTING_CHARACTERS_AMOUNT 3
-constexpr char splitting_characters[SPLITTING_CHARACTERS_AMOUNT] = { ',', ';', '#' };
+#define SPLITTING_CHARACTERS_AMOUNT 4
+constexpr char splitting_characters[SPLITTING_CHARACTERS_AMOUNT] = { ',', '#', ':', ';' };
 
 // IL seems to only support one line comments
 #define COMMENT_STRING_LENGTH 2
 const char* comment_string = "//";
+
+#define REAL_NUMBER_DIVIDER '.'
 
 bool detect_token_types(LexerLine* line) {
     // first let's do initial preprocessing like length calculation and letter case change
@@ -36,6 +38,8 @@ bool detect_token_types(LexerLine* line) {
             current_token->token.text[n] = (char)toupper(current_token->token.text[n]);
         }
 
+
+        // numeric checks, could probably be made more efficient
 
         // checking for invalid negative
         current_token->data.valid_numeric = true;
@@ -60,8 +64,45 @@ bool detect_token_types(LexerLine* line) {
         current_token->data.valid_octal = true;
         current_token->data.valid_hex = true;
         current_token->data.valid_decimal = true;
-        current_token->data.valid_boolean = true;
+        current_token->data.valid_boolean = false;
         current_token->data.valid_real = true;
+
+        // checking for booleans
+        if (current_token->length == 1) {
+            if (current_token->token.text[0] == 0 or current_token->token.text[0] == 1) {
+                current_token->data.valid_boolean = true;
+            }
+        }
+        else if (current_token->length == 4) {
+            if (strncmp(current_token->token.text, "TRUE", 4) == 0) {
+                current_token->data.valid_boolean = true;
+                current_token->data.valid_numeric = false;
+                current_token->data.valid_binary = false;
+                current_token->data.valid_octal = false;
+                current_token->data.valid_hex = false;
+                current_token->data.valid_decimal = false;
+                current_token->data.valid_real = false;
+                current_token->token.text[0] = '1';
+                current_token->token.text[1] = '\0';
+                current_token->length = 1;
+                continue;
+            }
+        }
+        else if (current_token->length == 5) {
+            if (strncmp(current_token->token.text, "FALSE", 5) == 0) {
+                current_token->data.valid_boolean = true;
+                current_token->data.valid_numeric = false;
+                current_token->data.valid_binary = false;
+                current_token->data.valid_octal = false;
+                current_token->data.valid_hex = false;
+                current_token->data.valid_decimal = false;
+                current_token->data.valid_real = false;
+                current_token->token.text[0] = '0';
+                current_token->token.text[1] = '\0';
+                current_token->length = 1;
+                continue;
+            }
+        }
 
         // checking for decimals
         for (uint32_t n = 0; n < current_token->length; n++) {
@@ -71,7 +112,55 @@ bool detect_token_types(LexerLine* line) {
             }
         }
 
+        // checking for real numbers
+        bool found_real_divider = false;
+        for (uint32_t n = 0; n < current_token->length; n++) {
+            if (current_token->token.text[n] == REAL_NUMBER_DIVIDER) {
+                if (found_real_divider) {
+                    current_token->data.valid_real = false;
+                    break;
+                }
+                found_real_divider = true;
+                continue;
+            }
+            if ((current_token->token.text[n] < '0' or current_token->token.text[n] > '9') and current_token->token.text[n] != '-') {
+                current_token->data.valid_real = false;
+                break;
+            }
+        }
 
+        // checking for base 2/8/16 validity
+        // 2
+        for (uint32_t n = 0; n < current_token->length; n++) {
+            if (current_token->token.text[n] != '1' and current_token->token.text[n] != '0') {
+                current_token->data.valid_binary = false;
+                break;
+            }
+        }
+        // 8
+        for (uint32_t n = 0; n < current_token->length; n++) {
+            if (current_token->token.text[n] < '0' or current_token->token.text[n] > '7') {
+                current_token->data.valid_octal = false;
+                break;
+            }
+        }
+        // 16
+        for (uint32_t n = 0; n < current_token->length; n++) {
+            if ((current_token->token.text[n] < '0' or current_token->token.text[n] > '9')
+                and (current_token->token.text[n] > 'F' or current_token->token.text[n] < 'A')) {
+                current_token->data.valid_hex = false;
+                break;
+            }
+        }
+    }
+
+    // checking for labels
+    if (line->token_amount == 2) {
+        if (line->tokens[1].length == 1 and line->tokens[1].token.text[0] == ':') {
+            // if the line is a label it needs to be inserted into the label translator
+            // it does not yet exist
+            return true;
+        }
     }
 
     // now context aware token analysis and size reduction can start
@@ -79,18 +168,101 @@ bool detect_token_types(LexerLine* line) {
         LexerToken* current_token = line->tokens + current_token_index;
 
         // checking for base 2/8/16 as it's impossible without context
+        // yeah, that way is ugly
+        if (current_token->data.valid_decimal and current_token_index < line->token_amount - 2
+            and (current_token + 1)->length == 1 and (current_token + 1)->token.text[0] == '#'
+            and (current_token + 2)->data.valid_numeric) {
+            if (current_token->length == 1) {
+                if (current_token->token.text[0] == '2' and (current_token + 2)->data.valid_binary) {
+                    // let's convert the number to it's correct value
+                    uint64_t sum = 0;
+                    for (uint32_t n = 0; n < (current_token + 2)->length; n++) {
+                        sum *= 2;
+                        sum += (current_token + 2)->token.text[n] - '0';
+                    }
+                    // and now merge the 3 tokens into one
+                    free(current_token->token.text);
+                    free((current_token + 1)->token.text);
+                    free((current_token + 2)->token.text);
+                    current_token->token.bin = sum;
+                    current_token->data.general_type = numeric;
+                    current_token->data.numeric_type = bin;
+                    line->token_amount -= 2;
+                    if (line->token_amount > current_token_index + 1) {
+                        memcpy(current_token + 1, current_token + 3, line->token_amount - current_token_index - 1);
+                    }
+                    continue;
+                }
+                else if (current_token->token.text[0] == '8' and (current_token + 2)->data.valid_octal) {
+                    uint64_t sum = 0;
+                    for (uint32_t n = 0; n < (current_token + 2)->length; n++) {
+                        sum *= 8;
+                        sum += (current_token + 2)->token.text[n] - '0';
+                    }
+                    free(current_token->token.text);
+                    free((current_token + 1)->token.text);
+                    free((current_token + 2)->token.text);
+                    current_token->token.oct = sum;
+                    current_token->data.general_type = numeric;
+                    current_token->data.numeric_type = oct;
+                    line->token_amount -= 2;
+                    if (line->token_amount > current_token_index + 1) {
+                        memcpy(current_token + 1, current_token + 3, line->token_amount - current_token_index - 1);
+                    }
+                }
+                continue;
+            }
+            if (current_token->length == 2 and current_token->token.text[0] == '1' and current_token->token.text[1] == '6' and (current_token + 2)->data.valid_hex) {
+                uint64_t sum = 0;
+                for (uint32_t n = 0; n < (current_token + 2)->length; n++) {
+                    sum *= 16;
+                    if ((current_token + 2)->token.text[n] > '9') {
+                        // A-F
+                        sum += (current_token + 2)->token.text[n] - 'A' + 9;
+                    }
+                    else {
+                        // 0-9
+                        sum += (current_token + 2)->token.text[n] - '0';
+                    }
+                }
+                free(current_token->token.text);
+                free((current_token + 1)->token.text);
+                free((current_token + 2)->token.text);
+                current_token->token.oct = sum;
+                current_token->data.general_type = numeric;
+                current_token->data.numeric_type = hex;
+                line->token_amount -= 2;
+                if (line->token_amount > current_token_index + 1) {
+                    memcpy(current_token + 1, current_token + 3, line->token_amount - current_token_index - 1);
+                }
+                continue;
+            }
+        }
+
+        // now the other cases
+        if (current_token_index == 0 and not current_token->data.valid_numeric) {
+            current_token->data.general_type = instruction;
+            continue;
+        }
+        // TODO: make this more precise like making labels only for jump points and another type for variables
+        else if (not current_token->data.valid_numeric) {
+            current_token->data.general_type = label;
+            continue;
+        }
+
+        return false;
     }
 
     return true;
 }
 
-void add_token(char* address, uint32_t length, LexerLine* line) {
+void add_token(const char* address, const uint32_t length, LexerLine* line) {
     // if there was something there isolate it
     if (line->capacity == line->token_amount) {
         line->capacity *= 2;
         LexerToken* temp = (LexerToken*)malloc(sizeof(LexerToken) * line->capacity);
         memcpy(temp, line->tokens, sizeof(LexerToken) * line->token_amount);
-        // TODO: figure out why this causes a segfault
+        // TODO: figure out why this causes a segfault (double free)
         //free(line->tokens);
         line->tokens = temp;
     }
@@ -161,6 +333,8 @@ LexerLine split_line(char* line) {
 
         start = current_index + 1;
     }
+
+    detect_token_types(&output);
 
     return output;
 }
