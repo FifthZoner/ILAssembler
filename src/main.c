@@ -1,10 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "assembler_runner.h"
 #include "parse_arguments.h"
 #include "lexer.h"
+#include "translator.h"
+#include "instruction_handlers.h"
 
 int main(int argc, const char** argv) {
     const CommandArguments arguments = parse_command_arguments(argc, argv);
@@ -15,14 +16,19 @@ int main(int argc, const char** argv) {
 
     // TODO: allow for multiple source files here
     LexerFiles files;
+    struct Translator translator;
+    translator.next_level_size = 0;
 
-    const LexerOutput lexer_output = run_lexer(&arguments, &files);
+    add_instruction_handlers(&translator);
+
+    const LexerOutput lexer_output = run_lexer(&arguments, &files, &translator);
     if (lexer_output.lines_amount == 0) {
         return 1;
     }
 
-    run_assembling(&lexer_output, &arguments);
+    run_assembling(&lexer_output, &arguments, &translator);
 
+    // TODO: add freeing for every string
     free(files.files);
 
     // TODO: add lexer output freeing here

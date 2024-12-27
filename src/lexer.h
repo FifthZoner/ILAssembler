@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 typedef enum LiteralType {
-    numeric, instruction, label
+    numeric, instruction, label, variable
 } LiteralType;
 
 typedef enum NumericType {
@@ -19,12 +19,16 @@ typedef struct LexerToken {
     union {
         char* text;
         char* instruction;
-        uint64_t label_line;
-        int64_t integer;
-        long double real;
-        uint64_t hex;
-        uint64_t oct;
-        uint64_t bin;
+        float real;
+        uint32_t label_line;
+        int32_t integer;
+        // just for things to look nice since it's all the same for the computer
+        uint32_t hex;
+        uint32_t oct;
+        uint32_t bin;
+        uint32_t boolean;
+        uint32_t address;
+        uint32_t numeric;
     } token;
     uint32_t length;
     struct {
@@ -61,6 +65,8 @@ typedef struct LexerFiles {
     char** files;
 } LexerFiles;
 
-LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files);
+#include "translator.h"
+
+LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files, struct Translator* translator);
 
 #endif //LEXER_H

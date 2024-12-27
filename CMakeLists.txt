@@ -8,9 +8,8 @@ add_executable(ILAssembler src/main.c
         src/parse_arguments.c
         src/lexer.c
         src/lexer.h
-        src/instruction_translator.c
-        src/instruction_translator.h
-        src/instruction_descriptor.h
+        src/translator.c
+        src/translator.h
         src/instruction_container.h
         src/assembler_runner.c
         src/assembler_runner.h

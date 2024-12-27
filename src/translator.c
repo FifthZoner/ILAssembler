@@ -1,12 +1,12 @@
-#include "instruction_translator.h"
+#include "translator.h"
 
 #include <iso646.h>
 #include <stdlib.h>
 
 // this might be used for jump label resolution too
 
-void instruction_translator_add(InstructionTranslator* translator,
-                                const char* key, uint32_t key_length, InstructionDescriptor descriptor, uint32_t index) {
+void translator_add(Translator* translator,
+                                const char* key, uint32_t key_length, TranslatorEntry descriptor, uint32_t index) {
 
     if (key_length == 0) {
         return;
@@ -19,24 +19,24 @@ void instruction_translator_add(InstructionTranslator* translator,
 
     if (translator->next_level_size == 0) {
         translator->next_level_size = 1;
-        translator->next_level = (InstructionTranslator*)malloc(sizeof(InstructionTranslator));
+        translator->next_level = (Translator*)malloc(sizeof(Translator));
         translator->next_level[0].key_letter = key[index];
         translator->next_level[0].next_level_size = 0;
         translator->next_level[0].next_level = nullptr;
-        return instruction_translator_add(&translator->next_level[0], key, key_length, descriptor, index + 1);
+        return translator_add(&translator->next_level[0], key, key_length, descriptor, index + 1);
     }
 
     // search for the letter to see if it exists
     for (uint32_t current = translator->next_level_size / 2, bound_lower = 0, bound_upper = translator->next_level_size - 1;;) {
         // if the next letter was found do a recursive call to find the next node
         if (translator->next_level[current].key_letter == key[index]) {
-            return instruction_translator_add(&translator->next_level[current], key, key_length, descriptor, index + 1);
+            return translator_add(&translator->next_level[current], key, key_length, descriptor, index + 1);
         }
 
         // at this point if bounds are the same then there is no way for this key to work
         if (bound_lower == bound_upper) {
             translator->next_level_size++;
-            InstructionTranslator* new_next_level = (InstructionTranslator*)malloc(sizeof(InstructionTranslator) * translator->next_level_size);
+            Translator* new_next_level = (Translator*)malloc(sizeof(Translator) * translator->next_level_size);
             if (translator->next_level[current].key_letter > key[index]) {
                 // in that case the new entry needs to be put at the current index
                 for (uint32_t n = 0; n < current; n++) {
@@ -51,7 +51,7 @@ void instruction_translator_add(InstructionTranslator* translator,
 
                 free(translator->next_level);
                 translator->next_level = new_next_level;
-                return instruction_translator_add(&translator->next_level[current], key, key_length, descriptor, index + 1);
+                return translator_add(&translator->next_level[current], key, key_length, descriptor, index + 1);
             }
             else {
                 // in that case the new entry needs to be put after the current index
@@ -67,7 +67,7 @@ void instruction_translator_add(InstructionTranslator* translator,
 
                 free(translator->next_level);
                 translator->next_level = new_next_level;
-                return instruction_translator_add(&translator->next_level[current + 1], key, key_length, descriptor, index + 1);
+                return translator_add(&translator->next_level[current + 1], key, key_length, descriptor, index + 1);
             }
         }
 
@@ -89,7 +89,7 @@ void instruction_translator_add(InstructionTranslator* translator,
     // all cases should be covered
 }
 
-const InstructionDescriptor* instruction_translator_get(InstructionTranslator* translator,
+const TranslatorEntry* translator_get(Translator* translator,
                                 const char* key, uint32_t key_length, uint32_t index) {
 
     // to avoid the situation where the translator structure is empty or key is empty
@@ -110,7 +110,7 @@ const InstructionDescriptor* instruction_translator_get(InstructionTranslator* t
     for (uint32_t current = translator->next_level_size / 2, bound_lower = 0, bound_upper = translator->next_level_size - 1;;) {
         // if the next letter was found do a recursive search for the next
         if (translator->next_level[current].key_letter == key[index]) {
-            return instruction_translator_get(&translator->next_level[current], key, key_length, index + 1);
+            return translator_get(&translator->next_level[current], key, key_length, index + 1);
         }
 
         // at this point if bounds are the same then there is no way for this key to work
@@ -136,9 +136,9 @@ const InstructionDescriptor* instruction_translator_get(InstructionTranslator* t
     return nullptr;
 }
 
-void instruction_translator_clear (const InstructionTranslator* translator) {
+void translator_clear (const Translator* translator) {
     for (uint32_t n = 0; n < translator->next_level_size; n++) {
-        instruction_translator_clear(&translator->next_level[n]);
+        translator_clear(&translator->next_level[n]);
     }
     if (translator->next_level_size != 0) {
         free(translator->next_level);

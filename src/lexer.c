@@ -15,6 +15,7 @@
 #define LINE_BUFFER 512
 
 #define WHITE_SPACE_CHARACTERS_AMOUNT 3
+struct Translator;
 constexpr char white_space_characters[WHITE_SPACE_CHARACTERS_AMOUNT] = { ' ', '\t', '\n' };
 
 #define SPLITTING_CHARACTERS_AMOUNT 4
@@ -26,7 +27,7 @@ const char* comment_string = "//";
 
 #define REAL_NUMBER_DIVIDER '.'
 
-bool detect_token_types(LexerLine* line) {
+bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t index) {
     // first let's do initial preprocessing like length calculation and letter case change
     for (uint32_t current_token_index = 0; current_token_index < line->token_amount; current_token_index++) {
         LexerToken* current_token = line->tokens + current_token_index;
@@ -158,7 +159,9 @@ bool detect_token_types(LexerLine* line) {
     if (line->token_amount == 2) {
         if (line->tokens[1].length == 1 and line->tokens[1].token.text[0] == ':') {
             // if the line is a label it needs to be inserted into the label translator
-            // it does not yet exist
+            TranslatorEntry entry;
+            entry.content.jump_address = index;
+            translator_add(translator, line->tokens[0].token.text, line->tokens[0].length, entry, 0);
             return true;
         }
     }
@@ -166,6 +169,13 @@ bool detect_token_types(LexerLine* line) {
     // now context aware token analysis and size reduction can start
     for (uint32_t current_token_index = 0; current_token_index < line->token_amount; current_token_index++) {
         LexerToken* current_token = line->tokens + current_token_index;
+
+        if (current_token->data.valid_boolean) {
+            const int32_t value = current_token->token.text[0] - '0';
+            free(current_token->token.text);
+            current_token->token.boolean = value;
+            continue;
+        }
 
         // checking for base 2/8/16 as it's impossible without context
         // yeah, that way is ugly
@@ -175,11 +185,7 @@ bool detect_token_types(LexerLine* line) {
             if (current_token->length == 1) {
                 if (current_token->token.text[0] == '2' and (current_token + 2)->data.valid_binary) {
                     // let's convert the number to it's correct value
-                    uint64_t sum = 0;
-                    for (uint32_t n = 0; n < (current_token + 2)->length; n++) {
-                        sum *= 2;
-                        sum += (current_token + 2)->token.text[n] - '0';
-                    }
+                    const uint32_t sum = strtol((current_token + 2)->token.text, nullptr, 2);
                     // and now merge the 3 tokens into one
                     free(current_token->token.text);
                     free((current_token + 1)->token.text);
@@ -194,11 +200,7 @@ bool detect_token_types(LexerLine* line) {
                     continue;
                 }
                 else if (current_token->token.text[0] == '8' and (current_token + 2)->data.valid_octal) {
-                    uint64_t sum = 0;
-                    for (uint32_t n = 0; n < (current_token + 2)->length; n++) {
-                        sum *= 8;
-                        sum += (current_token + 2)->token.text[n] - '0';
-                    }
+                    const uint32_t sum = strtol((current_token + 2)->token.text, nullptr, 8);
                     free(current_token->token.text);
                     free((current_token + 1)->token.text);
                     free((current_token + 2)->token.text);
@@ -213,22 +215,11 @@ bool detect_token_types(LexerLine* line) {
                 continue;
             }
             if (current_token->length == 2 and current_token->token.text[0] == '1' and current_token->token.text[1] == '6' and (current_token + 2)->data.valid_hex) {
-                uint64_t sum = 0;
-                for (uint32_t n = 0; n < (current_token + 2)->length; n++) {
-                    sum *= 16;
-                    if ((current_token + 2)->token.text[n] > '9') {
-                        // A-F
-                        sum += (current_token + 2)->token.text[n] - 'A' + 9;
-                    }
-                    else {
-                        // 0-9
-                        sum += (current_token + 2)->token.text[n] - '0';
-                    }
-                }
+                const uint32_t sum = strtol((current_token + 2)->token.text, nullptr, 16);
                 free(current_token->token.text);
                 free((current_token + 1)->token.text);
                 free((current_token + 2)->token.text);
-                current_token->token.oct = sum;
+                current_token->token.hex = sum;
                 current_token->data.general_type = numeric;
                 current_token->data.numeric_type = hex;
                 line->token_amount -= 2;
@@ -246,7 +237,27 @@ bool detect_token_types(LexerLine* line) {
         }
         // TODO: make this more precise like making labels only for jump points and another type for variables
         else if (not current_token->data.valid_numeric) {
-            current_token->data.general_type = label;
+            if (line->tokens[0].length >= 3 and strncmp(line->tokens[0].token.text, "JMP", 3) == 0) {
+                current_token->data.general_type = label;
+            }
+            else {
+                current_token->data.general_type = variable;
+            }
+            continue;
+        }
+
+        // converting other numbers
+        if (current_token->data.valid_real) {
+            const float value = strtof(current_token->token.text, nullptr);
+            free(current_token->token.text);
+            current_token->token.real = value;
+            continue;
+        }
+
+        if (current_token->data.valid_decimal) {
+            const int32_t value = (int32_t)strtol(current_token->token.text, nullptr, 10);
+            free(current_token->token.text);
+            current_token->token.integer = value;
             continue;
         }
 
@@ -276,7 +287,7 @@ void add_token(const char* address, const uint32_t length, LexerLine* line) {
     printf("%s\n", temp);
 }
 
-LexerLine split_line(char* line) {
+LexerLine split_line(char* line, struct Translator* translator, uint64_t index) {
     // the main lexer function actually
     // takes the line and changes it into tokens
     // TODO: ADD MEMORY DEALLOCATION AFTER ASSEMBLING
@@ -334,12 +345,13 @@ LexerLine split_line(char* line) {
         start = current_index + 1;
     }
 
-    detect_token_types(&output);
+    // TODO: add error handling here
+    detect_token_types(&output, translator, index);
 
     return output;
 }
 
-bool lex_file(const CommandArguments* arguments, FILE* file, LexerOutput* output, LexerFiles* files) {
+bool lex_file(const CommandArguments* arguments, FILE* file, LexerOutput* output, LexerFiles* files, struct Translator* translator) {
     // might want to put that to the function below
     const auto line = (char*)malloc(LINE_BUFFER * sizeof(char));
     while (fgets(line, LINE_BUFFER, file)) {
@@ -354,7 +366,7 @@ bool lex_file(const CommandArguments* arguments, FILE* file, LexerOutput* output
             output->lines = (LexerLine*)realloc(output->lines, sizeof(LexerLine) * output->capacity * 2);
             output->capacity *= 2;
         }
-        output->lines[output->lines_amount] = split_line(line);
+        output->lines[output->lines_amount] = split_line(line, translator, output->lines_amount);
         if (output->lines[output->lines_amount++].capacity == 0) {
             // TODO: add individual token freeing here
             free(line);
@@ -367,7 +379,7 @@ bool lex_file(const CommandArguments* arguments, FILE* file, LexerOutput* output
     return true;
 }
 
-LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files) {
+LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files, struct Translator* translator) {
     LexerOutput output;
     output.capacity = 0;
     output.lines_amount = 0;
@@ -390,7 +402,7 @@ LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files) {
             return output;
         }
 
-        if (not lex_file(arguments, current, &output, files)) {
+        if (not lex_file(arguments, current, &output, files, translator)) {
             printf("Error: File \"%s\" could not be converted by lexer!\n", files->files[file_index]);
             if (output.capacity > 0) {
                 free(output.lines);
