@@ -18,7 +18,7 @@ InstructionContainer instruction_handler_LDIX(LexerLine* line, Translator* trans
         return container;
     }
 
-    container.type_b.op = 0; // opcode unknown
+    container.type_b.op = 0b11000000;
     container.type_b.s  = line->tokens[1].token.integer;
 
     container.meta.is_valid = true;

@@ -6,11 +6,11 @@
 #include <stdint.h>
 
 typedef enum LiteralType {
-    numeric, instruction, label, variable
+    numeric, instruction, jump_label, variable
 } LiteralType;
 
 typedef enum NumericType {
-    integer, real, hex, oct, bin
+    integer, real, hex, oct, bin, boolean
 } NumericType;
 
 

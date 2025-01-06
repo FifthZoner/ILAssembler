@@ -25,7 +25,10 @@ constexpr char splitting_characters[SPLITTING_CHARACTERS_AMOUNT] = { ',', '#', '
 #define COMMENT_STRING_LENGTH 2
 const char* comment_string = "//";
 
-#define REAL_NUMBER_DIVIDER '.'
+#define REAL_NUMBER_DIVIDER 'f'
+
+// TODO: add an option to use a '.'
+char instruction_dividing_character = ',';
 
 bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t index) {
     // first let's do initial preprocessing like length calculation and letter case change
@@ -61,9 +64,9 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
         }
 
         // initial
-        current_token->data.valid_binary = true;
-        current_token->data.valid_octal = true;
-        current_token->data.valid_hex = true;
+        current_token->data.valid_binary = false;
+        current_token->data.valid_octal = false;
+        current_token->data.valid_hex = false;
         current_token->data.valid_decimal = true;
         current_token->data.valid_boolean = false;
         current_token->data.valid_real = true;
@@ -130,27 +133,39 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             }
         }
 
-        // checking for base 2/8/16 validity
-        // 2
-        for (uint32_t n = 0; n < current_token->length; n++) {
-            if (current_token->token.text[n] != '1' and current_token->token.text[n] != '0') {
-                current_token->data.valid_binary = false;
-                break;
-            }
-        }
-        // 8
-        for (uint32_t n = 0; n < current_token->length; n++) {
-            if (current_token->token.text[n] < '0' or current_token->token.text[n] > '7') {
-                current_token->data.valid_octal = false;
-                break;
-            }
-        }
-        // 16
-        for (uint32_t n = 0; n < current_token->length; n++) {
-            if ((current_token->token.text[n] < '0' or current_token->token.text[n] > '9')
-                and (current_token->token.text[n] > 'F' or current_token->token.text[n] < 'A')) {
-                current_token->data.valid_hex = false;
-                break;
+        // checking for base 2/8/16 validity in 0(x/o/b)<number> format
+        if (current_token->length > 2 and current_token->token.text[0] == '0') {
+            switch (current_token->token.text[1]) {
+                case 'X':
+                    current_token->data.valid_hex = true;
+                    for (uint32_t n = 2; n < current_token->length; n++) {
+                        if ((current_token->token.text[n] < '0' or current_token->token.text[n] > '9')
+                        and (current_token->token.text[n] > 'F' or current_token->token.text[n] < 'A')) {
+                            current_token->data.valid_hex = false;
+                            break;
+                        }
+                    }
+                    break;
+                case 'O':
+                    current_token->data.valid_octal = true;
+                    for (uint32_t n = 2; n < current_token->length; n++) {
+                        if (current_token->token.text[n] < '0' or current_token->token.text[n] > '7') {
+                            current_token->data.valid_octal = false;
+                            break;
+                        }
+                    }
+                    break;
+                case 'B':
+                    current_token->data.valid_binary = true;
+                    for (uint32_t n = 2; n < current_token->length; n++) {
+                        if (current_token->token.text[n] != '1' and current_token->token.text[n] != '0') {
+                            current_token->data.valid_binary = false;
+                            break;
+                        }
+                    }
+                    break;
+                default:
+                    break;
             }
         }
     }
@@ -166,7 +181,7 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
         }
     }
 
-    // now context aware token analysis and size reduction can start
+    // now context aware token analysis can start
     for (uint32_t current_token_index = 0; current_token_index < line->token_amount; current_token_index++) {
         LexerToken* current_token = line->tokens + current_token_index;
 
@@ -174,60 +189,10 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             const int32_t value = current_token->token.text[0] - '0';
             free(current_token->token.text);
             current_token->token.boolean = value;
+            current_token->length = 0;
+            current_token->data.general_type = numeric;
+            current_token->data.numeric_type = boolean;
             continue;
-        }
-
-        // checking for base 2/8/16 as it's impossible without context
-        // yeah, that way is ugly
-        if (current_token->data.valid_decimal and current_token_index < line->token_amount - 2
-            and (current_token + 1)->length == 1 and (current_token + 1)->token.text[0] == '#'
-            and (current_token + 2)->data.valid_numeric) {
-            if (current_token->length == 1) {
-                if (current_token->token.text[0] == '2' and (current_token + 2)->data.valid_binary) {
-                    // let's convert the number to it's correct value
-                    const uint32_t sum = strtol((current_token + 2)->token.text, nullptr, 2);
-                    // and now merge the 3 tokens into one
-                    free(current_token->token.text);
-                    free((current_token + 1)->token.text);
-                    free((current_token + 2)->token.text);
-                    current_token->token.bin = sum;
-                    current_token->data.general_type = numeric;
-                    current_token->data.numeric_type = bin;
-                    line->token_amount -= 2;
-                    if (line->token_amount > current_token_index + 1) {
-                        memcpy(current_token + 1, current_token + 3, line->token_amount - current_token_index - 1);
-                    }
-                    continue;
-                }
-                else if (current_token->token.text[0] == '8' and (current_token + 2)->data.valid_octal) {
-                    const uint32_t sum = strtol((current_token + 2)->token.text, nullptr, 8);
-                    free(current_token->token.text);
-                    free((current_token + 1)->token.text);
-                    free((current_token + 2)->token.text);
-                    current_token->token.oct = sum;
-                    current_token->data.general_type = numeric;
-                    current_token->data.numeric_type = oct;
-                    line->token_amount -= 2;
-                    if (line->token_amount > current_token_index + 1) {
-                        memcpy(current_token + 1, current_token + 3, line->token_amount - current_token_index - 1);
-                    }
-                }
-                continue;
-            }
-            if (current_token->length == 2 and current_token->token.text[0] == '1' and current_token->token.text[1] == '6' and (current_token + 2)->data.valid_hex) {
-                const uint32_t sum = strtol((current_token + 2)->token.text, nullptr, 16);
-                free(current_token->token.text);
-                free((current_token + 1)->token.text);
-                free((current_token + 2)->token.text);
-                current_token->token.hex = sum;
-                current_token->data.general_type = numeric;
-                current_token->data.numeric_type = hex;
-                line->token_amount -= 2;
-                if (line->token_amount > current_token_index + 1) {
-                    memcpy(current_token + 1, current_token + 3, line->token_amount - current_token_index - 1);
-                }
-                continue;
-            }
         }
 
         // now the other cases
@@ -236,9 +201,9 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             continue;
         }
         // TODO: make this more precise like making labels only for jump points and another type for variables
-        else if (not current_token->data.valid_numeric) {
+        if (not current_token->data.valid_numeric) {
             if (line->tokens[0].length >= 3 and strncmp(line->tokens[0].token.text, "JMP", 3) == 0) {
-                current_token->data.general_type = label;
+                current_token->data.general_type = jump_label;
             }
             else {
                 current_token->data.general_type = variable;
@@ -246,19 +211,56 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             continue;
         }
 
-        // converting other numbers
-        if (current_token->data.valid_real) {
-            const float value = strtof(current_token->token.text, nullptr);
-            free(current_token->token.text);
-            current_token->token.real = value;
-            continue;
-        }
+        if (current_token->data.valid_numeric) {
+            if (current_token->data.valid_decimal) {
+                const int32_t value = (int32_t)strtol(current_token->token.text, nullptr, 10);
+                free(current_token->token.text);
+                current_token->token.integer = value;
+                current_token->length = 0;
+                current_token->data.general_type = numeric;
+                current_token->data.numeric_type = integer;
+                continue;
+            }
 
-        if (current_token->data.valid_decimal) {
-            const int32_t value = (int32_t)strtol(current_token->token.text, nullptr, 10);
-            free(current_token->token.text);
-            current_token->token.integer = value;
-            continue;
+            if (current_token->data.valid_real) {
+                const float value = strtof(current_token->token.text, nullptr);
+                free(current_token->token.text);
+                current_token->token.real = value;
+                current_token->length = 0;
+                current_token->data.general_type = numeric;
+                current_token->data.numeric_type = real;
+                continue;
+            }
+
+            if (current_token->data.valid_hex) {
+                const int32_t value = (int32_t)strtoul(current_token->token.text, nullptr, 16);
+                free(current_token->token.text);
+                current_token->token.hex = value;
+                current_token->length = 0;
+                current_token->data.general_type = numeric;
+                current_token->data.numeric_type = hex;
+                continue;
+            }
+
+            if (current_token->data.valid_octal) {
+                const int32_t value = (int32_t)strtoul(current_token->token.text, nullptr, 8);
+                free(current_token->token.text);
+                current_token->token.oct = value;
+                current_token->length = 0;
+                current_token->data.general_type = numeric;
+                current_token->data.numeric_type = oct;
+                continue;
+            }
+
+            if (current_token->data.valid_binary) {
+                const int32_t value = (int32_t)strtoul(current_token->token.text, nullptr, 2);
+                free(current_token->token.text);
+                current_token->token.bin = value;
+                current_token->length = 0;
+                current_token->data.general_type = numeric;
+                current_token->data.numeric_type = bin;
+                continue;
+            }
         }
 
         return false;
