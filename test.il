@@ -10,4 +10,4 @@
 //LD      bVar2      store value of bVar2...
 //ST      bRes      ... in bRes
 
-0x12af
+LDA 0x100,0x7,0x3,1

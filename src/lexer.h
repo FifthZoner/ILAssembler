@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 typedef enum LiteralType {
-    numeric, instruction, jump_label, variable
+    numeric, instruction, jump_label, variable, divider, IY
 } LiteralType;
 
 typedef enum NumericType {
@@ -33,7 +33,7 @@ typedef struct LexerToken {
     uint32_t length;
     struct {
         // these only check for the possibility if it being this given type
-        LiteralType general_type : 2;
+        LiteralType general_type : 3;
         NumericType numeric_type : 3;
         bool valid_decimal : 1;
         bool valid_hex     : 1;

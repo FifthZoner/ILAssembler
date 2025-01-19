@@ -18,8 +18,8 @@
 struct Translator;
 constexpr char white_space_characters[WHITE_SPACE_CHARACTERS_AMOUNT] = { ' ', '\t', '\n' };
 
-#define SPLITTING_CHARACTERS_AMOUNT 4
-constexpr char splitting_characters[SPLITTING_CHARACTERS_AMOUNT] = { ',', '#', ':', ';' };
+#define SPLITTING_CHARACTERS_AMOUNT 5
+constexpr char splitting_characters[SPLITTING_CHARACTERS_AMOUNT] = { '.', ',', '#', ':', ';' };
 
 // IL seems to only support one line comments
 #define COMMENT_STRING_LENGTH 2
@@ -27,8 +27,11 @@ const char* comment_string = "//";
 
 #define REAL_NUMBER_DIVIDER 'f'
 
-// TODO: add an option to use a '.'
 char instruction_dividing_character = ',';
+
+// used to offset label addresses as they are not actually in code
+uint64_t label_amount = 0;
+uint64_t program_start_offset = 0;
 
 bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t index) {
     // first let's do initial preprocessing like length calculation and letter case change
@@ -73,7 +76,7 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
 
         // checking for booleans
         if (current_token->length == 1) {
-            if (current_token->token.text[0] == 0 or current_token->token.text[0] == 1) {
+            if (current_token->token.text[0] == '0' or current_token->token.text[0] == '1') {
                 current_token->data.valid_boolean = true;
             }
         }
@@ -168,6 +171,8 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
                     break;
             }
         }
+
+        current_token->data.valid_numeric = current_token->data.valid_binary | current_token->data.valid_octal | current_token->data.valid_hex | current_token->data.valid_decimal | current_token->data.valid_real;
     }
 
     // checking for labels
@@ -175,7 +180,8 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
         if (line->tokens[1].length == 1 and line->tokens[1].token.text[0] == ':') {
             // if the line is a label it needs to be inserted into the label translator
             TranslatorEntry entry;
-            entry.content.jump_address = index;
+            entry.content.jump_address = index - label_amount++;
+            line->tokens[0].data.general_type = jump_label + program_start_offset;
             translator_add(translator, line->tokens[0].token.text, line->tokens[0].length, entry, 0);
             return true;
         }
@@ -184,6 +190,13 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
     // now context aware token analysis can start
     for (uint32_t current_token_index = 0; current_token_index < line->token_amount; current_token_index++) {
         LexerToken* current_token = line->tokens + current_token_index;
+
+        if (current_token->length == 1 and current_token->token.text[0] == instruction_dividing_character) {
+            free(current_token->token.text);
+            current_token->length = 0;
+            current_token->data.general_type = divider;
+            continue;
+        }
 
         if (current_token->data.valid_boolean) {
             const int32_t value = current_token->token.text[0] - '0';
@@ -200,13 +213,17 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             current_token->data.general_type = instruction;
             continue;
         }
-        // TODO: make this more precise like making labels only for jump points and another type for variables
         if (not current_token->data.valid_numeric) {
             if (line->tokens[0].length >= 3 and strncmp(line->tokens[0].token.text, "JMP", 3) == 0) {
                 current_token->data.general_type = jump_label;
             }
             else {
-                current_token->data.general_type = variable;
+                if (current_token->length == 2 and current_token->token.text[0] == 'I' and current_token->token.text[0] == 'Y') {
+                    current_token->data.general_type = IY;
+                }
+                else {
+                    current_token->data.general_type = variable;
+                }
             }
             continue;
         }
@@ -386,6 +403,11 @@ LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files, stru
     output.capacity = 0;
     output.lines_amount = 0;
     output.lines = nullptr;
+
+    // preparing things from arguments
+    if (arguments->splitting_by_dot) {
+        instruction_dividing_character = '.';
+    }
 
     files->files = (char**)malloc(sizeof(char*));
     files->capacity = 1;

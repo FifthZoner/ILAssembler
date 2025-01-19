@@ -10,11 +10,23 @@
 int main(int argc, const char** argv) {
     const CommandArguments arguments = parse_command_arguments(argc, argv);
 
-    if (arguments.source_file == nullptr) {
+    if (arguments.error) {
+        printf("Invalid input parameters! Run the command with -h flag to get help!");
         return 1;
     }
 
-    // TODO: allow for multiple source files here
+    // when displaying help skip the run
+    if (arguments.display_help) {
+        printf("IL Assembler help:\n"
+                     "To run the assembler use: \"<not sure about the name> <source file> (-d/-c) <output file>\"\n"
+                     "Flags:\n"
+                     "-c - separating instruction arguments by a comma (default)\n"
+                     "-d - separating instruction arguments by a dot\n"
+                     "The first path found is always the source file and the second, optional one is the output file, if it's not specified it will be called <source name>.hex\n"
+                     );
+        return 0;
+    }
+
     LexerFiles files;
     struct Translator translator;
     translator.next_level_size = 0;
