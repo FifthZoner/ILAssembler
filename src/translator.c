@@ -73,7 +73,7 @@ void translator_add(Translator* translator,
 
         // if the letter in array is larger than the searched one reduce the current index
         if (translator->next_level[current].key_letter > key[index]) {
-            bound_upper = current - 1;
+            bound_upper = current;
             current = (bound_lower + bound_upper) / 2;
         }
         // do the reverse otherwise

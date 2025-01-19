@@ -181,6 +181,8 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             // if the line is a label it needs to be inserted into the label translator
             TranslatorEntry entry;
             entry.content.jump_address = index - label_amount++;
+            entry.is_variable = false;
+            entry.is_jump_label = true;
             line->tokens[0].data.general_type = jump_label + program_start_offset;
             translator_add(translator, line->tokens[0].token.text, line->tokens[0].length, entry, 0);
             return true;
@@ -218,8 +220,11 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
                 current_token->data.general_type = jump_label;
             }
             else {
-                if (current_token->length == 2 and current_token->token.text[0] == 'I' and current_token->token.text[0] == 'Y') {
+                if (current_token->length == 2 and current_token->token.text[0] == 'I' and current_token->token.text[1] == 'Y') {
                     current_token->data.general_type = IY;
+                }
+                else  if (current_token->length == 3 and current_token->token.text[0] == 'E' and current_token->token.text[1] == 'Q'  and current_token->token.text[2] == 'U') {
+                    current_token->data.general_type = EQU;
                 }
                 else {
                     current_token->data.general_type = variable;
@@ -302,8 +307,6 @@ void add_token(const char* address, const uint32_t length, LexerLine* line) {
     strncpy(temp, address, length);
     temp[length] = '\0';
     line->tokens[line->token_amount++].token.text = temp;
-
-    printf("%s\n", temp);
 }
 
 LexerLine split_line(char* line, struct Translator* translator, uint64_t index) {
@@ -367,6 +370,27 @@ LexerLine split_line(char* line, struct Translator* translator, uint64_t index) 
     // TODO: add error handling here
     detect_token_types(&output, translator, index);
 
+    // detecting EQU statements
+    if (output.token_amount > 2 and output.tokens[0].data.general_type == instruction and output.tokens[1].data.general_type == EQU) {
+        // move the tokens after EQU into a variable entry and insert it into the translator
+        TranslatorEntry entry;
+        entry.is_variable = true;
+        entry.is_jump_label = false;
+        entry.content.variable = (VariableEntry*)malloc(sizeof(VariableEntry));
+        entry.content.variable->token_amount = output.token_amount - 2;
+        entry.content.variable->tokens = (LexerToken*)malloc(entry.content.variable->token_amount * sizeof(LexerToken));
+        for (uint32_t n = 2; n < output.token_amount; n++) {
+            entry.content.variable->tokens[n - 2] = output.tokens[n];
+        }
+        translator_add(translator, output.tokens->token.text, output.tokens->length, entry, 0);
+
+        free(output.tokens[0].token.text);
+        free(output.tokens[1].token.text);
+        free(output.tokens);
+        output.capacity = 0;
+        output.token_amount = 0;
+    }
+
     return output;
 }
 
@@ -380,17 +404,18 @@ bool lex_file(const CommandArguments* arguments, FILE* file, LexerOutput* output
             continue;
         }
 
+        LexerLine split = split_line(line, translator, output->lines_amount);;
+        if (split.token_amount == 0) {
+            continue;
+        }
+
         if (output->capacity == output->lines_amount) {
             // in that case more space is needed, let's double it
             output->lines = (LexerLine*)realloc(output->lines, sizeof(LexerLine) * output->capacity * 2);
             output->capacity *= 2;
         }
-        output->lines[output->lines_amount] = split_line(line, translator, output->lines_amount);
-        if (output->lines[output->lines_amount++].capacity == 0) {
-            // TODO: add individual token freeing here
-            free(line);
-            return false;
-        }
+
+        output->lines[output->lines_amount++] = split;
 
         // FEATURE: data about line's position in file could be added here
     }
@@ -437,7 +462,33 @@ LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files, stru
         }
     }
 
+    // translating variables
+    for (uint64_t n = 0; n < output.lines_amount; n++) {
+        for (uint32_t m = 1; m < output.lines[n].token_amount; m++) {
+            if (output.lines[n].tokens[m].data.general_type == variable) {
+                // find the variable and replace it with proper tokens
+                TranslatorEntry* result = translator_get(translator, output.lines[n].tokens[m].token.text, output.lines[n].tokens[m].length, 0);
+                if (result == nullptr or not result->is_variable) {
+                    // TODO: add error handling here
+                    return output;
+                }
+                // inputting the new values
+                uint32_t new_size = output.lines[n].token_amount + result->content.variable->token_amount - 1;
+                uint32_t delta = new_size - output.lines[n].token_amount;
+                if (output.lines[n].capacity < new_size) {
+                    output.lines[n].tokens = (LexerToken*)realloc(output.lines[n].tokens, sizeof(LexerToken) * new_size);
+                    output.lines[n].capacity = new_size;
+                }
 
-    
+                for (uint32_t k = new_size - 1, l = 1; l < output.lines[n].token_amount - m; k--, l++) {
+                    output.lines[n].tokens[k] = output.lines[n].tokens[k - delta + 1];
+                }
+                for (uint32_t k = m, l = 0; l < result->content.variable->token_amount; k++, l++) {
+                    output.lines[n].tokens[k] = result->content.variable->tokens[l];
+                }
+                output.lines[n].token_amount = new_size;
+            }
+        }
+    }
     return output;
 }

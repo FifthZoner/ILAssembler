@@ -9,5 +9,5 @@
 //m1:
 //LD      bVar2      store value of bVar2...
 //ST      bRes      ... in bRes
-
-LDA 0x100,0x7,0x3,1
+var EQU 0x100,0x7,0x3,1
+LDA var

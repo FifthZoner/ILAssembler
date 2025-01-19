@@ -11,13 +11,20 @@ typedef enum TranslatorOutputType {
     translator_instruction, translator_label, translator_variable,
 } TranslatorOutputType;
 
+typedef struct VariableEntry {
+    LexerToken* tokens;
+    uint64_t token_amount;
+} VariableEntry;
+
 typedef struct TranslatorEntry {
 
     union {
         InstructionContainer(*called_function)(LexerLine*, struct Translator*);
         uint64_t jump_address;
-        // <variable something here>
+        VariableEntry* variable;
     } content;
+    bool is_variable;
+    bool is_jump_label;
 
 } TranslatorEntry;
 

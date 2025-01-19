@@ -2944,6 +2944,8 @@ InstructionContainer instruction_handler_RORX(LexerLine* line, Translator* trans
 void add_instruction_handlers(Translator* translator) {
     TranslatorEntry entry;
     // load instructions
+    entry.is_variable = false;
+    entry.is_jump_label = false;
     entry.content.called_function = &instruction_handler_LDIX;
     translator_add(translator, "LDIX", 4, entry, 0);
     entry.content.called_function = &instruction_handler_LDIY;
