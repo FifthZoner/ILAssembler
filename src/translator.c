@@ -143,4 +143,13 @@ void translator_clear (const Translator* translator) {
     if (translator->next_level_size != 0) {
         free(translator->next_level);
     }
+    if (translator->descriptor.content.jump_address != 0) {
+        // there is something in the descriptor
+        if (translator->descriptor.is_variable) {
+            for (uint64_t n = 0; n < translator->descriptor.content.variable->token_amount; n++) {
+                free_lexer_token(translator->descriptor.content.variable->tokens + n);
+            }
+        }
+        // in case of jump labels and functions there is no need to deallocate
+    }
 }

@@ -50,6 +50,7 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
 
         // checking for invalid negative
         current_token->data.valid_numeric = true;
+        current_token->data.is_copied = false;
         for (uint32_t n = 0; n < current_token->length; n++) {
             if (current_token->token.text[n] == '-' and n != 0) {
                 current_token->data.valid_numeric = false;
@@ -195,6 +196,7 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
 
         if (current_token->length == 1 and current_token->token.text[0] == instruction_dividing_character) {
             free(current_token->token.text);
+            current_token->token.text = nullptr;
             current_token->length = 0;
             current_token->data.general_type = divider;
             continue;
@@ -203,6 +205,7 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
         if (current_token->data.valid_boolean) {
             const int32_t value = current_token->token.text[0] - '0';
             free(current_token->token.text);
+            current_token->token.text = nullptr;
             current_token->token.boolean = value;
             current_token->length = 0;
             current_token->data.general_type = numeric;
@@ -237,6 +240,7 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             if (current_token->data.valid_decimal) {
                 const int32_t value = (int32_t)strtol(current_token->token.text, nullptr, 10);
                 free(current_token->token.text);
+                current_token->token.text = nullptr;
                 current_token->token.integer = value;
                 current_token->length = 0;
                 current_token->data.general_type = numeric;
@@ -247,6 +251,7 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             if (current_token->data.valid_real) {
                 const float value = strtof(current_token->token.text, nullptr);
                 free(current_token->token.text);
+                current_token->token.text = nullptr;
                 current_token->token.real = value;
                 current_token->length = 0;
                 current_token->data.general_type = numeric;
@@ -257,6 +262,7 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             if (current_token->data.valid_hex) {
                 const int32_t value = (int32_t)strtoul(current_token->token.text, nullptr, 16);
                 free(current_token->token.text);
+                current_token->token.text = nullptr;
                 current_token->token.hex = value;
                 current_token->length = 0;
                 current_token->data.general_type = numeric;
@@ -267,6 +273,7 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             if (current_token->data.valid_octal) {
                 const int32_t value = (int32_t)strtoul(current_token->token.text, nullptr, 8);
                 free(current_token->token.text);
+                current_token->token.text = nullptr;
                 current_token->token.oct = value;
                 current_token->length = 0;
                 current_token->data.general_type = numeric;
@@ -277,6 +284,7 @@ bool detect_token_types(LexerLine* line, struct Translator* translator, uint64_t
             if (current_token->data.valid_binary) {
                 const int32_t value = (int32_t)strtoul(current_token->token.text, nullptr, 2);
                 free(current_token->token.text);
+                current_token->token.text = nullptr;
                 current_token->token.bin = value;
                 current_token->length = 0;
                 current_token->data.general_type = numeric;
@@ -312,7 +320,6 @@ void add_token(const char* address, const uint32_t length, LexerLine* line) {
 LexerLine split_line(char* line, struct Translator* translator, uint64_t index) {
     // the main lexer function actually
     // takes the line and changes it into tokens
-    // TODO: ADD MEMORY DEALLOCATION AFTER ASSEMBLING
 
     LexerLine output;
     output.token_amount = 0;
@@ -367,8 +374,13 @@ LexerLine split_line(char* line, struct Translator* translator, uint64_t index) 
         start = current_index + 1;
     }
 
-    // TODO: add error handling here
-    detect_token_types(&output, translator, index);
+    if (not detect_token_types(&output, translator, index)) {
+        printf("Error: could not proceed during token type detection!\n");
+        // TODO: there is a more complex case with deallocation here, will be skipped for now
+        output.capacity = 0;
+        output.token_amount = 1;
+        return output;
+    }
 
     // detecting EQU statements
     if (output.token_amount > 2 and output.tokens[0].data.general_type == instruction and output.tokens[1].data.general_type == EQU) {
@@ -408,11 +420,21 @@ bool lex_file(const CommandArguments* arguments, FILE* file, LexerOutput* output
         if (split.token_amount == 0) {
             continue;
         }
+        if (split.capacity == 0 and split.token_amount == 1) {
+            split.token_amount = 0;
+            return false;
+        }
 
         if (output->capacity == output->lines_amount) {
             // in that case more space is needed, let's double it
-            output->lines = (LexerLine*)realloc(output->lines, sizeof(LexerLine) * output->capacity * 2);
-            output->capacity *= 2;
+            if (output->capacity == 0) {
+                output->lines = (LexerLine*)malloc(sizeof(LexerLine));
+                output->capacity = 1;
+            }
+            else {
+                output->lines = (LexerLine*)realloc(output->lines, sizeof(LexerLine) * output->capacity * 2);
+                output->capacity *= 2;
+            }
         }
 
         output->lines[output->lines_amount++] = split;
@@ -433,6 +455,7 @@ LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files, stru
     if (arguments->splitting_by_dot) {
         instruction_dividing_character = '.';
     }
+    program_start_offset = arguments->start_address;
 
     files->files = (char**)malloc(sizeof(char*));
     files->capacity = 1;
@@ -444,9 +467,7 @@ LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files, stru
 
         if (current == nullptr) {
             printf("Error: File \"%s\" could not be opened!\n", files->files[file_index]);
-            if (output.capacity > 0) {
-                free(output.lines);
-            }
+            free_lexer_output(&output);
             output.lines_amount = 0;
             return output;
         }
@@ -469,7 +490,7 @@ LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files, stru
                 // find the variable and replace it with proper tokens
                 TranslatorEntry* result = translator_get(translator, output.lines[n].tokens[m].token.text, output.lines[n].tokens[m].length, 0);
                 if (result == nullptr or not result->is_variable) {
-                    // TODO: add error handling here
+                    printf("Error: variable identifier not found!\n");
                     return output;
                 }
                 // inputting the new values
@@ -485,10 +506,42 @@ LexerOutput run_lexer(const CommandArguments* arguments, LexerFiles* files, stru
                 }
                 for (uint32_t k = m, l = 0; l < result->content.variable->token_amount; k++, l++) {
                     output.lines[n].tokens[k] = result->content.variable->tokens[l];
+                    output.lines[n].tokens[k].data.is_copied = true; // thanks to that it's memory will not be freed
                 }
                 output.lines[n].token_amount = new_size;
             }
         }
     }
     return output;
+}
+
+
+// freeing functions
+void free_lexer_token(LexerToken* token) {
+    if (not token->data.is_copied) {
+        if (token->data.general_type != numeric and token->token.text != nullptr) {
+            free(token->token.text);
+            token->token.text = nullptr;
+        }
+    }
+}
+
+void free_lexer_line(LexerLine* line) {
+    for (uint64_t n = 0; n < line->token_amount; n++) {
+        free_lexer_token(line->tokens + n);
+    }
+    if (line->token_amount > 0) {
+        free(line->tokens);
+        line->tokens = nullptr;
+    }
+}
+
+void free_lexer_output(LexerOutput* output) {
+    for (uint64_t n = 0; n < output->lines_amount; n++) {
+        free_lexer_line(output->lines + n);
+    }
+    if (output->lines_amount > 0) {
+        free(output->lines);
+        output->lines = nullptr;
+    }
 }

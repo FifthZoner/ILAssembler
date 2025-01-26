@@ -18,11 +18,15 @@ int main(int argc, const char** argv) {
     // when displaying help skip the run
     if (arguments.display_help) {
         printf("IL Assembler help:\n"
-                     "To run the assembler use: \"<not sure about the name> <source file> (-d/-c) <output file>\"\n"
+                     "To run the assembler use: \"<name of the binary> <source file> <output file> (-d/-c) (-s <size>)\"\n"
                      "Flags:\n"
                      "-c - separating instruction arguments by a comma (default)\n"
                      "-d - separating instruction arguments by a dot\n"
+                     "-s - specify the start address, put a decimal or hex number (0x<number>) after the flag, default value is 0\n"
                      "The first path found is always the source file and the second, optional one is the output file, if it's not specified it will be called <source name>.hex\n"
+                     "\n"
+                     "Thank you for using my software!\n"
+                     "Please report any found bugs and feature requests at: https://github.com/FifthZoner/ILAssembler\n"
                      );
         return 0;
     }
@@ -33,17 +37,17 @@ int main(int argc, const char** argv) {
 
     add_instruction_handlers(&translator);
 
-    const LexerOutput lexer_output = run_lexer(&arguments, &files, &translator);
+    LexerOutput lexer_output = run_lexer(&arguments, &files, &translator);
     if (lexer_output.lines_amount == 0) {
         return 1;
     }
 
     run_assembling(&lexer_output, &arguments, &translator);
 
-    // TODO: add freeing for every string
     free(files.files);
+    free_lexer_output(&lexer_output);
 
-    // TODO: add lexer output freeing here
+    // TODO: add translator freeing
 
     printf("Assembling complete!\n");
     return 0;

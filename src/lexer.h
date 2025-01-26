@@ -42,6 +42,7 @@ typedef struct LexerToken {
         bool valid_boolean : 1;
         bool valid_real    : 1;
         bool valid_numeric : 1;
+        bool is_copied     : 1;
     } data;
 } LexerToken;
 
@@ -64,6 +65,13 @@ typedef struct LexerFiles {
     uint32_t capacity;
     char** files;
 } LexerFiles;
+
+// freeing functions
+void free_lexer_token(LexerToken* token);
+
+void free_lexer_line(LexerLine* line);
+
+void free_lexer_output(LexerOutput* output);
 
 #include "translator.h"
 

@@ -2,8 +2,8 @@
 
 #include <iso646.h>
 #include <stdio.h>
-
-
+#include <stdlib.h>
+#include <string.h>
 
 
 bool run_line(LexerLine* line, FILE* out, Translator* translator) {
@@ -26,7 +26,7 @@ bool run_line(LexerLine* line, FILE* out, Translator* translator) {
     // at this point it should be an actual instruction
     const TranslatorEntry* result = translator_get(translator, line->tokens[0].token.text, line->tokens[0].length, 0);
 
-    if (result->content.called_function == nullptr) {
+    if (result == nullptr or result->content.called_function == nullptr) {
         printf("Error type: Instruction identifier not recognized!\n");
         return false;
     }
@@ -46,9 +46,19 @@ bool run_line(LexerLine* line, FILE* out, Translator* translator) {
 
 bool run_assembling(const LexerOutput* const lexer_output, const CommandArguments* const arguments, struct Translator* translator) {
 
-    // TODO: add default name
-
-    FILE* out = fopen(arguments->output_file, "wb");
+    FILE* out;
+    if (arguments->output_file == nullptr) {
+        uint32_t length = strnlen(arguments->source_file, MAX_ARGUMENT_LENGTH);
+        char* temp = (char*)malloc(sizeof(char) * (length + 5));
+        strncpy(temp, arguments->source_file, length);
+        strncpy(temp + length, ".hex", 4);
+        temp[length + 4] = '\0';
+        out = fopen(temp, "wb");
+        free(temp);
+    }
+    else {
+        out = fopen(arguments->output_file, "wb");
+    }
     if (out == nullptr) {
         printf("Could not open output file: \"%s\"\n", arguments->output_file);
         return 0;
@@ -65,6 +75,7 @@ bool run_assembling(const LexerOutput* const lexer_output, const CommandArgument
 
 
     fclose(out);
+
     translator_clear(translator);
     return true;
 }
